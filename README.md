@@ -9,6 +9,31 @@
 
 ---
 
+## ⚠️ Production Readiness Status
+
+**IMPORTANT**: This system is currently in **ACTIVE DEVELOPMENT** and has known critical issues that must be addressed before production deployment. A comprehensive deep codebase review has identified **25+ critical issues** including:
+
+- 🚨 **No automatic WebSocket reconnection** - Will become blind to market if connection drops
+- 🚨 **Race conditions in state management** - Could place orders on wrong side
+- 🚨 **Data loss scenarios** - Up to 5 seconds of data lost on crash
+- 🚨 **Memory leaks** - Unbounded trade ID storage grows indefinitely
+- 🚨 **No rate limiting** - Will trigger API bans
+- 🚨 **Security issue** - Private keys logged to stderr in Python script
+
+**Current Status**: 7.5/10 - Excellent quantitative foundation, requires production hardening
+
+**Estimated time to production-ready**: 2-3 weeks of focused development
+
+See [DEEP_REVIEW_FINDINGS.md](DEEP_REVIEW_FINDINGS.md) for complete details and [Known Issues](#known-issues-and-limitations) section below.
+
+**Recommendation**:
+- ✅ Safe for **research, backtesting, and paper trading**
+- ✅ Safe for **small-scale testing with testnet funds**
+- ⚠️ **NOT recommended for production live trading** without addressing critical issues
+- ⚠️ **Start with very small position sizes** if testing on mainnet
+
+---
+
 ## Overview
 
 This is a sophisticated Rust-based market making bot (~10,000 LOC) implementing the **Avellaneda-Stoikov optimal market making** strategy with advanced features:
@@ -25,7 +50,10 @@ This is a sophisticated Rust-based market making bot (~10,000 LOC) implementing 
 
 ## Table of Contents
 
+- [Production Readiness Status](#️-production-readiness-status)
+- [Overview](#overview)
 - [Features](#features)
+- [Known Issues and Limitations](#known-issues-and-limitations)
 - [Architecture](#architecture)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -40,7 +68,11 @@ This is a sophisticated Rust-based market making bot (~10,000 LOC) implementing 
 - [Deployment](#deployment)
 - [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
+- [Production Readiness Checklist](#production-readiness-checklist)
+- [Project Structure](#project-structure)
+- [Resources](#resources)
 - [Contributing](#contributing)
+- [Disclaimer](#disclaimer)
 
 ---
 
@@ -74,6 +106,119 @@ This is a sophisticated Rust-based market making bot (~10,000 LOC) implementing 
 - ✅ **Dynamic Repricing**: Automatic adjustment on mid price movement
 - ✅ **Minimum Spread Enforcement**: Configurable spread floors
 - ✅ **Tick Size Compliance**: Automatic rounding to exchange tick size
+
+---
+
+## Known Issues and Limitations
+
+This section documents known issues identified in the comprehensive codebase review. See [DEEP_REVIEW_FINDINGS.md](DEEP_REVIEW_FINDINGS.md) for complete technical details.
+
+### Critical Issues (Production Blockers)
+
+#### 🚨 Connection Management
+- **No automatic WebSocket reconnection**: If the WebSocket connection drops, the bot stops receiving market data and becomes blind
+- **No heartbeat monitoring**: Dead connections may not be detected until the next message attempt
+- **No retry logic on REST failures**: Single timeout with no exponential backoff for transient errors
+
+**Impact**: Bot can stop functioning without warning
+**Workaround**: Enable REST backup feed (`rest_backup_enabled: true`) and monitor logs closely
+
+#### 🚨 State Management & Concurrency
+- **Race condition in ping-pong mode**: Fill handler and order manager can have TOCTOU issues, potentially placing orders on the wrong side
+- **Race condition at shutdown**: Order manager may place new orders during shutdown between cancellation attempts
+- **Write lock contention**: Spread calculator write locks can delay order placements
+
+**Impact**: Wrong-side orders, position accumulation, orphaned orders
+**Workaround**: Use smaller `order_refresh_interval_sec` and monitor positions closely
+
+#### 🚨 Data Persistence & Integrity
+- **Buffered data loss on crash**: Up to 5 seconds of CSV data lost if process crashes between flushes (8KB buffer)
+- **Non-atomic state file writes**: State file can be corrupted if crash occurs during write
+- **No CSV escaping**: If market names contain commas, CSV parsing fails
+- **State saved only every 100 updates**: Up to 100 records of state lost on crash
+
+**Impact**: Data loss, corrupted CSV files, parsing failures
+**Workaround**: Run bot on stable infrastructure, implement external monitoring
+
+#### 🚨 Memory Management
+- **Unbounded trade ID storage**: All trade IDs kept in memory forever (~160 MB per 10M trades)
+- **Unbounded WebSocket channels**: No backpressure if consumer is slow
+- **CSV parsing loads entire file**: Multi-GB files cause OOM
+
+**Impact**: Memory exhaustion after extended operation
+**Workaround**: Restart bot daily, monitor memory usage
+
+#### 🚨 Security
+- **Private keys logged to stderr**: `scripts/sign_order.py:108` logs full input including private key
+- **No key encryption**: API keys and private keys stored in plain text in memory
+- **No timeout on Python subprocess**: Order signing can hang indefinitely
+
+**Impact**: CRITICAL SECURITY BREACH - Keys exposed in log files
+**Fix Required**: Comment out line 108 in `scripts/sign_order.py` before use:
+```python
+# sys.stderr.write(f"Input: {input_str}\n")  # SECURITY: Do not log private keys
+```
+
+#### 🚨 API & Rate Limiting
+- **No rate limiting**: Will trigger Extended DEX API rate limits and temporary bans
+- **Nonce collision risks**: Uses `timestamp + counter % 1000`, susceptible to NTP clock adjustments
+- **Silent failures with defaults**: Malformed API responses use default values instead of failing
+
+**Impact**: API bans, order rejections, incorrect order parameters
+**Workaround**: Keep `order_refresh_interval_sec` ≥ 0.25 to limit request rate
+
+### High Priority Issues
+
+#### Mathematical Issues
+- **Biased variance estimator** (`src/market_maker.rs:231`): Uses population variance (÷N) instead of sample variance (÷N-1)
+  - Underestimates volatility by ~5% for small samples
+  - **Quick Fix**: Change `/log_returns.len()` to `/(log_returns.len() - 1)`
+
+- **Insufficient data check** (`src/market_maker.rs:796`): Requires 2 points but linear regression needs ≥3 for valid confidence intervals
+  - **Quick Fix**: Change `< 2` to `< 3`
+
+#### Error Handling
+- **Uses assert! for validation** (`src/signature.rs:131-134`): Asserts compiled out in release builds
+- **Division by zero risks**: No validation that price > 0 or size_increment > 0
+- **Blocking I/O in async context**: Uses `std::fs` instead of `tokio::fs`, blocks runtime thread
+
+### Medium Priority Issues
+
+- **No task crash recovery**: If any background task crashes, it dies silently
+- **Untracked subtasks**: Spawned tasks not tracked, creating orphans on shutdown
+- **No disk space checking**: When disk fills, cryptic I/O errors with no warning
+- **No data retention policy**: CSV files grow forever with no rotation or cleanup
+- **Hardcoded slippage**: 0.75% market order slippage not configurable
+
+### Testing Gaps
+
+Current test coverage is estimated at **~30%** with significant gaps:
+
+- ✅ **Good coverage**: κ estimation (7 tests), SNIP-12 signing (5+ tests)
+- ⚠️ **Partial coverage**: REST API (public only), WebSocket (connection only)
+- ❌ **Missing tests**: GARCH models, AS spread calculation, data collection, state management, all async tasks
+- ❌ **No integration tests**: End-to-end trading flow untested
+
+### Limitations by Design
+
+- **Python dependency**: Order signing requires Python 3.8+ with Extended SDK
+- **Single exchange**: Only supports Extended DEX (Starknet)
+- **Ping-pong mode only**: Cannot hold both bid and ask simultaneously
+- **CSV storage**: Data stored in CSV files, not a proper time-series database
+- **No backtest mode**: Cannot replay historical data for strategy testing
+
+### Resource Requirements
+
+**Minimum Requirements**:
+- **CPU**: 2 cores (4 recommended)
+- **RAM**: 2 GB (4 GB recommended for multiple markets)
+- **Disk**: 10 GB (1 GB per market per week of data)
+- **Network**: Stable connection with <100ms latency to Extended DEX
+
+**Data Collection Requirements**:
+- Minimum 24 hours of data required for volatility estimation
+- Minimum 1-2 hours recommended before starting trading
+- GARCH models need 24+ hours for reliable convergence
 
 ---
 
@@ -213,6 +358,17 @@ EXTENDED_ENV=mainnet
 ```
 
 **⚠️ Security Warning**: Never commit `.env` files or private keys to version control!
+
+**🚨 CRITICAL SECURITY FIX REQUIRED**: Before using real private keys, you MUST disable the debug logging in the Python signing script:
+
+```bash
+# Edit scripts/sign_order.py and comment out line 108:
+nano scripts/sign_order.py
+# Find: sys.stderr.write(f"Input: {input_str}\n")
+# Change to: # sys.stderr.write(f"Input: {input_str}\n")  # SECURITY: Disabled
+```
+
+This line logs your private key to stderr and is a **CRITICAL SECURITY VULNERABILITY**.
 
 ---
 
@@ -1127,6 +1283,99 @@ cargo run --bin collect_data
 - Use simpler method: `"k_estimation_method": "simple"`
 - Collect more data (need full orderbook depth)
 
+#### 7. Bot stops receiving market data
+
+**Symptoms**: No new orders placed, last update timestamp frozen
+
+**Root Cause**: WebSocket disconnection with no automatic reconnection
+
+**Solutions**:
+- Check internet connection
+- Enable REST backup: `"rest_backup_enabled": true`
+- Restart bot (Ctrl+C and restart)
+- Monitor logs for "WebSocket connection closed" messages
+- Consider implementing external monitoring to detect and restart bot
+
+#### 8. Memory usage grows continuously
+
+**Root Cause**: Unbounded trade ID storage (known memory leak)
+
+**Solutions**:
+- Implement daily bot restarts (automated cron job)
+- Monitor memory usage: `watch -n 5 "ps aux | grep market_maker"`
+- Alert when memory exceeds 1 GB
+- Long-term fix: Modify `data_collector.rs` to use time-bounded cache
+
+#### 9. Orders placed on wrong side (position accumulates)
+
+**Root Cause**: Race condition in ping-pong mode switching
+
+**Symptoms**:
+- Position grows in one direction instead of oscillating
+- Multiple consecutive buy or sell orders
+- Position doesn't match expected inventory
+
+**Solutions**:
+- Monitor position closely during first hours
+- Set strict position limits externally
+- Use smaller `order_refresh_interval_sec` (0.5-1.0 seconds)
+- Manual intervention: Cancel all orders via exchange UI if position grows unexpectedly
+
+#### 10. "Order rejected: Invalid signature"
+
+**Causes**:
+- Incorrect tick size rounding (must round BEFORE signing)
+- Wrong `VAULT_NUMBER` (doesn't match your account)
+- Incorrect `STARK_PRIVATE` or `STARK_PUBLIC` keys
+- Minimum order size violation
+- Python signing script error
+
+**Solutions**:
+- Verify account credentials in `.env` file
+- Check minimum order size for the market
+- Test signing with example: `cargo run --example basic_usage`
+- Check Python dependencies: `pip install -r requirements.txt`
+
+#### 11. High memory usage during CSV parsing
+
+**Root Cause**: CSV parser loads entire file into memory
+
+**Symptoms**: OOM error when loading multi-GB CSV files
+
+**Solutions**:
+- Split large CSV files into smaller chunks
+- Delete old data after analysis
+- Use streaming analysis instead of loading full dataset
+- Long-term fix: Implement streaming CSV iterator
+
+#### 12. State file corrupted after crash
+
+**Root Cause**: Non-atomic state file writes
+
+**Symptoms**: `Error loading state.json`, bot starts from beginning
+
+**Solutions**:
+- Keep backup copies of state files: `cp data/*/state.json data/*/state.json.backup`
+- Manually repair JSON if possible
+- As last resort, delete state.json (loses resume capability)
+- Long-term fix: Implement atomic writes with temp file + rename
+
+#### 13. Biased volatility estimates
+
+**Root Cause**: Variance estimator uses N instead of N-1 (biased estimator)
+
+**Impact**: Volatility underestimated by ~5%, spreads too tight
+
+**Quick Fix**:
+```rust
+// In src/market_maker.rs:231, change:
+.sum::<f64>() / log_returns.len() as f64;
+// To:
+.sum::<f64>() / (log_returns.len() - 1) as f64;
+```
+
+Then rebuild: `cargo build --release`
+
 ### Debug Logging
 
 Enable verbose logging:
@@ -1161,6 +1410,97 @@ cargo run --example test_k_estimator -- ETH-USD
 # Test spread calculation
 cargo run --example spread_analysis
 ```
+
+---
+
+## Production Readiness Checklist
+
+Before deploying to production with real funds, complete this checklist:
+
+### Critical Fixes (MUST DO)
+
+- [ ] **Security Fix**: Comment out `sys.stderr.write()` in `scripts/sign_order.py:108`
+- [ ] **Variance Fix**: Change `/log_returns.len()` to `/(log_returns.len() - 1)` in `src/market_maker.rs:231`
+- [ ] **Data Check Fix**: Change `< 2` to `< 3` in `src/market_maker.rs:796`
+- [ ] **Enable REST Backup**: Set `"rest_backup_enabled": true` in config.json as fallback
+- [ ] **Test on Testnet**: Run for 24+ hours on Sepolia testnet first
+- [ ] **Monitor Memory**: Set up memory monitoring and alerts
+- [ ] **Daily Restarts**: Implement automated daily bot restarts to prevent memory leaks
+
+### High Priority (STRONGLY RECOMMENDED)
+
+- [ ] **WebSocket Reconnection**: Implement automatic reconnection logic (requires code changes)
+- [ ] **Rate Limiting**: Add token bucket rate limiter for API calls (requires code changes)
+- [ ] **Task Supervision**: Add supervisor pattern for task crash recovery (requires code changes)
+- [ ] **Atomic State Writes**: Implement temp file + atomic rename for state persistence (requires code changes)
+- [ ] **Fix Race Conditions**: Add proper locking for ping-pong mode switches (requires code changes)
+- [ ] **Add Integration Tests**: Create end-to-end tests for trading flow
+- [ ] **External Monitoring**: Set up monitoring for position, P&L, connection status
+- [ ] **Alert System**: Configure alerts for disconnections, errors, unexpected positions
+
+### Configuration Best Practices
+
+- [ ] **Start Small**: Begin with `market_making_notional_usd: 10` or less
+- [ ] **Conservative Gamma**: Use higher gamma (0.01-0.1) initially for wider spreads
+- [ ] **Minimum Spread Floor**: Set `minimum_spread_bps: 15` or higher initially
+- [ ] **Slower Refresh**: Use `order_refresh_interval_sec: 1.0` to reduce API load
+- [ ] **Enable Logging**: Set `RUST_LOG=info` for production logging
+- [ ] **REST Backup**: Enable `rest_backup_enabled: true` with 2-second interval
+
+### Operations Setup
+
+- [ ] **Data Collection**: Run 24-48 hours of data collection before trading
+- [ ] **Disk Space**: Ensure 50+ GB free space for data growth
+- [ ] **Backup Strategy**: Implement automated backups of config, data, and state files
+- [ ] **Log Rotation**: Set up log rotation to prevent disk filling
+- [ ] **Graceful Shutdown**: Always use Ctrl+C or `./kill_process.sh`, never `kill -9`
+- [ ] **Position Limits**: Set maximum position size limits externally
+- [ ] **Emergency Runbook**: Document steps for emergency shutdown and manual order cancellation
+
+### Testing Requirements
+
+Before production deployment, test:
+
+- [ ] **Testnet Trading**: Run bot for 24+ hours on Sepolia testnet
+- [ ] **WebSocket Reconnection**: Test behavior when connection drops (manual disconnect)
+- [ ] **Order Placement**: Verify orders appear correctly on exchange
+- [ ] **Fill Handling**: Verify fills are detected and position updates
+- [ ] **Graceful Shutdown**: Verify all orders cancelled on Ctrl+C
+- [ ] **Restart Recovery**: Verify bot resumes correctly after restart
+- [ ] **GARCH Convergence**: Verify volatility estimates are reasonable
+- [ ] **κ Estimation**: Verify κ estimates have good confidence intervals (R² > 0.85)
+- [ ] **Memory Stability**: Monitor memory for 24+ hours, should not grow unbounded
+
+### Risk Management
+
+- [ ] **Maximum Position Size**: Define and enforce max position
+- [ ] **Stop Loss**: Implement external stop-loss monitoring
+- [ ] **Maximum Drawdown**: Define and monitor max acceptable drawdown
+- [ ] **Circuit Breakers**: Plan for extreme market conditions
+- [ ] **Manual Override**: Maintain ability to manually cancel all orders via Exchange UI
+- [ ] **Connection Loss Protocol**: Plan for extended connection loss (>5 minutes)
+- [ ] **Bug Incident Response**: Document steps if bug is discovered during trading
+
+### Monitoring Dashboard (Recommended)
+
+Set up monitoring for:
+- Current position (should oscillate around zero for market making)
+- Open orders (should always have one order in ping-pong mode)
+- P&L (cumulative and hourly rate)
+- Fill rate (orders filled per hour)
+- Spread width (bid-ask spread in bps)
+- WebSocket connection status
+- Last order placement time (alert if >60 seconds)
+- Memory usage (alert if >1 GB)
+- Disk space (alert if <10 GB)
+
+### Post-Deployment
+
+- [ ] **Monitor First 24 Hours**: Watch logs continuously for first day
+- [ ] **Daily Reviews**: Review P&L, fills, and anomalies daily
+- [ ] **Weekly Analysis**: Analyze spread effectiveness, fill rates, parameter tuning
+- [ ] **Position Reconciliation**: Daily reconciliation with exchange balance
+- [ ] **Backup Verification**: Weekly verify backups are working
 
 ---
 
@@ -1262,17 +1602,30 @@ Contributions are welcome! Please:
 
 **⚠️ Important Disclaimers:**
 
-1. **Risk Warning**: Trading cryptocurrencies carries significant risk. This bot is provided for educational and research purposes. You may lose all your capital.
+1. **Production Readiness**: This bot has **known critical issues** documented in [DEEP_REVIEW_FINDINGS.md](DEEP_REVIEW_FINDINGS.md) and the [Known Issues](#known-issues-and-limitations) section. It is **NOT production-ready** without addressing these issues. The estimated time to production-ready is 2-3 weeks of focused development.
 
-2. **No Warranty**: This software is provided "as-is" without any warranty. Use at your own risk.
+2. **Risk Warning**: Trading cryptocurrencies carries significant risk. This bot is provided for educational and research purposes. You may lose all your capital. The bot has known issues including race conditions, memory leaks, and connection reliability problems.
 
-3. **Not Financial Advice**: This bot does not constitute financial advice. Always do your own research.
+3. **No Warranty**: This software is provided "as-is" without any warranty. Use at your own risk. The authors are not responsible for any financial losses, bugs, or system failures.
 
-4. **Testing**: Always test with small amounts first. Use testnet for initial experiments.
+4. **Not Financial Advice**: This bot does not constitute financial advice. Always do your own research.
 
-5. **Responsibility**: You are solely responsible for your trading decisions and any losses incurred.
+5. **Testing Required**: Always test extensively on testnet first. Use small position sizes initially. Monitor closely during the first 24-48 hours of operation. The bot requires minimum 24 hours of historical data before trading.
 
-6. **Compliance**: Ensure compliance with your local laws and regulations regarding cryptocurrency trading.
+6. **Security**: The bot has a critical security vulnerability where private keys can be logged to stderr. You MUST fix this before using real private keys. See [Installation](#installation) section for the fix.
+
+7. **Known Limitations**: The bot has no automatic WebSocket reconnection, no rate limiting, and potential race conditions in order placement. See [Known Issues](#known-issues-and-limitations) for complete list.
+
+8. **Monitoring Required**: This bot requires active monitoring. It can stop receiving market data if WebSocket disconnects, accumulate wrong-side positions due to race conditions, and experience memory leaks requiring daily restarts.
+
+9. **Responsibility**: You are solely responsible for:
+   - Implementing the critical fixes before production use
+   - Monitoring the bot's operation and positions
+   - Managing risk and position limits
+   - Any trading decisions and losses incurred
+   - Compliance with applicable laws and regulations
+
+10. **Compliance**: Ensure compliance with your local laws and regulations regarding cryptocurrency trading, automated trading systems, and derivatives trading.
 
 ---
 
