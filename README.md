@@ -2,7 +2,7 @@
 
 **Production-grade automated market maker for Extended DEX (Starknet perpetuals) implementing the Avellaneda-Stoikov quantitative trading model.**
 
-[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.91%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **New to Extended DEX?** [Sign up with my referral link](https://app.extended.exchange/join/FREQTRADE) and receive a **10% discount on commissions** for your first $50M in total trading volume.
@@ -169,7 +169,7 @@ src/
 
 ### Prerequisites
 
-- **Rust** 1.70+ ([Install Rust](https://rustup.rs/))
+- **Rust** 1.91+ ([Install Rust](https://rustup.rs/))
 - **Python** 3.8+ with pip
 - **Git**
 
