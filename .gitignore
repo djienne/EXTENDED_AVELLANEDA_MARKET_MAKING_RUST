@@ -53,3 +53,7 @@ __pycache__/
 
 # Backup directory
 backup/
+
+# Project-specific exclusions
+LICENSE
+.claude/
