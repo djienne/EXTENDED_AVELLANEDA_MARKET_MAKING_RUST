@@ -5,6 +5,10 @@
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**New to Extended DEX?** [Sign up with my referral link](https://app.extended.exchange/join/FREQTRADE) and receive a **10% discount on commissions** for your first $50M in total trading volume.
+
+---
+
 ## Overview
 
 This is a sophisticated Rust-based market making bot (~10,000 LOC) implementing the **Avellaneda-Stoikov optimal market making** strategy with advanced features:
@@ -16,8 +20,6 @@ This is a sophisticated Rust-based market making bot (~10,000 LOC) implementing 
 - **Starknet Integration**: SNIP-12 order signing via Python SDK
 - **High-Frequency Trading**: Sub-second order refresh (250ms default)
 - **Production Features**: Graceful shutdown, persistent P&L tracking, automatic order cancellation
-
-**New to Extended DEX?** [Sign up with my referral link](https://app.extended.exchange/join/FREQTRADE) and receive a **10% discount on commissions** for your first $50M in total trading volume.
 
 ---
 
