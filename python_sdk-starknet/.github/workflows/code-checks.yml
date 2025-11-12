@@ -1,0 +1,37 @@
+name: Code checks
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ starknet ]
+    types: [ opened, reopened, synchronize, ready_for_review ]
+
+jobs:
+  code-checks:
+    if: github.event.pull_request.draft == false
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Setup poetry
+        run: |
+          pip install --upgrade pip==25.0
+          pip install poetry==1.8.3
+          poetry config virtualenvs.create false
+
+      - name: Install deps
+        run: poetry install --no-root
+
+      - name: Run linter
+        run: make lint
+
+      - name: Run unit-tests
+        run: make test

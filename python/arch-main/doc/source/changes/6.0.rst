@@ -1,0 +1,38 @@
+=========
+Version 6
+=========
+
+Release 6.3
+===========
+- Performance enhancement for long-run covariance estimators when numba is installed (:issue:`687`)
+- Python 3.12 support
+- Compatability with NumPy 2
+- Fixes for future changes in pandas
+
+Release 6.2
+===========
+- Fixed a bug that affected forecasting from  :class:`~arch.univariate.volatility.FIGARCH` models (:issue:`606`).
+- Added a performance warning when testing for unit roots in large series using a lag-length
+  search with no-max-lag specified.
+- Fixed a bug that affected forecasting from :class:`arch.univariate.volatility.FIGARCH`
+  models (:issue:`606`).
+- Changed the default value of ``reindex`` to ``False`` so that forecasts
+  will not match the input by default.  Set ``reindex`` to ``True`` if this is
+  required.
+- Made ``from __future__ import reindex`` a no-op.
+- Updated notebooks to reflect best practices
+
+Release 6.1
+===========
+- Pushed back the adoption of Cython 3 until a later date
+- Fixed a bug that occurred when:
+
+  - Using a AR, HAR or other model with lagged dependent variables; and
+  - ``rescale=True`` or with data that was automatically rescaled.
+
+Release 6.0
+===========
+- Minimum supported Python is 3.9
+- Bumped minimum NumPy, SciPy, pandas, statsmodels and Cython
+- Removed dependence on property-cached
+- Added compatability with Cython 3

@@ -1,0 +1,48 @@
+services:
+  market-maker-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: extended_mm_bot
+    restart: unless-stopped
+
+    # Environment variables from .env file
+    env_file:
+      - .env
+
+    # Mount volumes for configuration and data persistence
+    volumes:
+      # Configuration file (read-only)
+      - ./config.json:/app/config.json:ro
+
+      # Data directory for CSV files (persistent, read-write)
+      - ./data:/app/data:rw
+
+      # Optional: Mount .env file explicitly (if not using env_file)
+      # - ./.env:/app/.env:ro
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Resource limits (optional - adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Graceful shutdown (allow 30 seconds for order cancellation)
+    stop_grace_period: 30s
+
+    # Stop signal (SIGINT for graceful shutdown)
+    stop_signal: SIGINT
+
+    # Network mode (optional)
+    network_mode: bridge
