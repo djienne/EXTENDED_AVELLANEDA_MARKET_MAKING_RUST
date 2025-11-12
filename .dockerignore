@@ -1,0 +1,52 @@
+# Git files
+.git/
+.gitignore
+
+# Rust build artifacts (will be built inside container)
+target/
+# Note: Cargo.lock is NOT excluded - needed for reproducible builds
+
+# Data files (mounted as volume)
+data/
+*.csv
+*.log
+
+# IDE settings
+.vscode/
+.idea/
+.claude/
+
+# Documentation
+*.md
+CLAUDE_LONG.md
+DOC/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment files (will be mounted as volume)
+.env
+.env.*
+
+# Deployment scripts
+deploy.py
+backup_project.py
+backup_*.zip
+
+# SSH keys
+*.pem
+
+# Temporary files
+*.swp
+*.swo
+*.tmp
+.DS_Store
+Thumbs.db
+nul
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore

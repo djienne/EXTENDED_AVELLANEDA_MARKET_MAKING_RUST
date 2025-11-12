@@ -1,0 +1,32 @@
+{
+  "markets": [
+    "BTC-USD",
+    "ETH-USD",
+    "SOL-USD",
+    "XAU-USD",
+    "SPX-USD",
+    "EUR-USD"
+  ],
+  "market_making_market": "ETH-USD",
+  "market_making_notional_usd": 34.0,
+  "market_making_gamma": 0.00100,
+  "minimum_spread_bps": 10.0,
+  "time_horizon_hours": 24.0,
+  "window_hours": 24.0,
+  "spread_calc_interval_sec": 60,
+  "order_refresh_interval_sec": 0.25,
+  "pnl_log_interval_sec": 10,
+  "repricing_threshold_bps": 3.0,
+  "data_directory": "data",
+  "collect_orderbook": true,
+  "collect_trades": true,
+  "collect_full_orderbook": true,
+  "rest_backup_enabled": false,
+  "rest_backup_log_prices": false,
+  "k_estimation_method": "virtual_quoting",
+  "_comment_k_estimation_method": "Options: 'simple' (count trades/sec), 'virtual_quoting' (exponential fit λ=A*e^(-κ*δ), aliases: virtual/vq), 'depth_intensity' (OLS regression on orderbook depth, alias: depth)",
+  "k_min_samples_per_level": 10,
+  "sigma_estimation_method": "garch",
+  "_comment_sigma_estimation_method": "Options: 'simple' (historical volatility), 'garch' (Rust GARCH(1,1) Gaussian), 'garch_studentt' (Rust GARCH(1,1) Student's t, aliases: garch_t/studentt), 'python_garch' (Rust Student's t → Python arch library GARCH(1,1) Student's t with 100-trial shuffling, aliases: python)",
+  "trading_enabled": true
+}

@@ -1,0 +1,207 @@
+# Python package
+# Create and test a Python package on multiple Python versions.
+# Add steps that analyze code, save the dist with the build record, publish to a PyPI-compatible index, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/python
+
+parameters:
+  # defaults for any parameters that are not specified
+  name: ''
+  vmImage: ''
+  BUILD_FLAGS: ''
+
+
+jobs:
+
+- job: ${{ parameters.name }}Test
+  pool:
+    vmImage: ${{ parameters.vmImage }}
+  strategy:
+    matrix:
+      python_313:
+        python.version: '3.13'
+        PYTEST_PATTERN: "(slow or not slow)"
+      python_312:
+        python.version: '3.12'
+      python_311:
+        python.version: '3.11'
+      python_310:
+        python.version: '3.10'
+        test.wheel: true
+      python_311_copy_on_write:
+        python.version: '3.11'
+        ARCH_TEST_COPY_ON_WRITE: 1
+      python_minimums:
+        python.version: '3.10'
+        NUMPY: 1.23.0
+        SCIPY: 1.9.0
+        MATPLOTLIB: 3.4.0
+        PANDAS: 1.4.0
+        test.sdist: true
+      python_310_conda_numba:
+        python.version: '3.10'
+        use.conda: 'true'
+        NUMPY: 2.0.0
+        USE_NUMBA: true
+        MATPLOTLIB: 3.0
+        PYTEST_PATTERN: "(slow or not slow)"
+      python310_numpy120:
+        python.version: '3.10'
+        MATPLOTLIB: 3.3.0
+        NUMPY: 1.22.3
+        SCIPY: 1.8.0
+        PANDAS: 1.4.0
+      python_311_cython_coverage:
+        python.version: '3.11'
+        BUILD_FLAGS: '-Csetup-args=-Dcython-coverage=true'
+        cython.coverage: true
+      python_311_no_binary:
+        python.version: '3.11'
+        BUILD_FLAGS: '-Csetup-args=-Dno-binary=true'
+        PYTEST_OPTS: '--skip-slow'
+        PANDAS: 2.2.2
+        USE_NUMBA: true
+      python_312_no_binary_environment:
+        python.version: '3.12'
+        ARCH_NO_BINARY: true
+        use.conda: 'true'
+        USE_NUMBA: true
+        PYTEST_OPTS: '--skip-slow'
+      python_310_no_numba:
+        python.version: '3.10'
+        NUMPY: 1.24.0
+        USE_NUMBA: false
+        MATPLOTLIB: 3.5.0
+        PANDAS: 1.5.0
+        PYTEST_PATTERN: "(slow or not slow)"
+      python_312_statsmodels_main:
+        python.version: '3.10'
+        STATSMODELS_MAIN: true
+      python312_pre:
+        python.version: '3.12'
+        pip.pre: true
+
+    maxParallel: 10
+
+  steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '$(python.version)'
+      architecture: 'x64'
+    displayName: 'Use Python $(python.version)'
+
+  - bash: |
+      echo "##vso[task.prependpath]$CONDA/bin"
+      echo "##vso[task.prependpath]$CONDA/envs/arch-test"
+      echo "##vso[task.prependpath]$CONDA/envs/arch-test/condabin"
+      echo "##vso[task.prependpath]$CONDA/envs/arch-test/bin"
+    displayName: 'Add conda and env to PATH'
+    condition: eq(variables['use.conda'], 'true')
+
+  - script: |
+      source ci/azure/install-posix.sh
+    displayName: 'Install dependencies'
+
+  - script: |
+      source ci/azure/update_path.sh
+      if [[ ${STATSMODELS_MAIN} == "true" ]]; then
+        echo "Installing statsmodels main"
+        source ci/install-statsmodels-main.sh
+      fi
+    displayName: 'Install arch main'
+
+  - script: |
+     source ci/azure/update_path.sh
+     flake8 arch
+     ruff check arch
+     black --check arch
+     isort --check arch
+    displayName: 'Check style and formatting'
+
+  - script: python -m pip list
+    displayName: 'List Configuration (PyPI)'
+    condition: ne(variables['use.conda'], 'true')
+
+  - script: |
+     source ci/azure/update_path.sh
+     conda list
+    displayName: 'List Configuration (conda)'
+    condition: eq(variables['use.conda'], 'true')
+
+
+  - script: |
+      echo "Installing to site packages (sdist)"
+      python -m pip install pip build --upgrade
+      python -m build --sdist . -v  
+      SDIST=$(ls -t ./dist/arch-*.tar.gz | head -1)
+      pip install ${SDIST} -v
+    displayName: 'Install arch (site-packages, sdist)'
+    condition: eq(variables['test.sdist'], 'true')
+
+  - script: |
+      echo "Installing to site packages (wheel)
+      python -m pip install pip wheel --upgrade"
+      python -m pip wheel . --wheel-dir ./dist/
+      WHL=$(ls -t ./dist/arch-*.whl | head -1)
+      pip install ${WHL} -v
+    displayName: 'Install arch (site-packages, wheel)'
+    condition: eq(variables['test.wheel'], 'true')
+
+  - script: |
+      echo python -m pip install --no-build-isolation -vv -e . ${BUILD_FLAGS}
+      python -m pip install --no-build-isolation -vv -e . ${BUILD_FLAGS}
+    displayName: 'Install arch (editable)'
+    condition: and(ne(variables['test.wheel'], 'true'), ne(variables['test.sdist'], 'true'))
+
+  - script: |
+      pushd arch/univariate
+      cython --verbose -M --fast-fail -3  -X cpow=True -X boundscheck=False -X wraparound=False -X cdivision=True -X binding=True -X linetrace=True recursions.pyx
+      popd
+      pushd arch/bootstrap/
+      cython --verbose -M --fast-fail -3  -X cpow=True -X boundscheck=False -X wraparound=False -X cdivision=True -X binding=True -X linetrace=True _samplers.pyx
+      popd
+    displayName: 'Transpile Cython to C for coverage support'
+    condition: eq(variables['cython.coverage'], 'true')
+
+  - script: |
+      echo "Testing site packages"
+      mkdir test_run_dir
+      pushd test_run_dir
+      python -c "import arch; arch.test(['-n', 'auto', '--junitxml=../junit/test-results.xml'])"
+      popd
+    displayName: 'Run tests (site-packages)'
+    condition: or(eq(variables['test.wheel'], 'true'), eq(variables['test.sdist'], 'true'))
+
+  - script: |
+      echo "Testing editable install"
+      export COVERAGE_OPTS="--cov-config=.coveragerc --cov=arch --cov-branch --cov-report xml:coverage.xml --cov-report term"
+      echo pytest -m "${PYTEST_PATTERN}" --junitxml=junit/test-results.xml -n auto --durations=25 ${COVERAGE_OPTS} arch/tests
+      pytest -m "${PYTEST_PATTERN}" --junitxml=junit/test-results.xml -n auto --durations=25 ${COVERAGE_OPTS} arch/tests
+    displayName: 'Run tests (editable)'
+    condition: and(and(ne(variables['test.wheel'], 'true'), ne(variables['test.sdist'], 'true')), ne(variables['pip.pre'], 'true'))
+
+  - script: |
+      echo "Testing pip-pre"
+      export COVERAGE_OPTS="--cov-config=.coveragerc --cov=arch --cov-branch --cov-report xml:coverage.xml --cov-report term"
+      echo pytest -m "${PYTEST_PATTERN}" --junitxml=junit/test-results.xml -n auto --durations=25 ${COVERAGE_OPTS} arch/tests
+      pytest -m "${PYTEST_PATTERN}" --junitxml=junit/test-results.xml -n auto --durations=25 ${COVERAGE_OPTS} arch/tests
+    displayName: 'Run tests (pip pre)'
+    condition: eq(variables['pip.pre'], 'true')
+    continueOnError: true
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFiles: '**/test-results.xml'
+      testRunTitle: 'Python $(python.version)'
+    condition: succeededOrFailed()
+
+  - task: PublishCodeCoverageResults@2
+    inputs:
+      summaryFileLocation: '$(System.DefaultWorkingDirectory)/**/coverage.xml'
+    condition: and(ne(variables['test.sdist'], 'true'), ne(variables['test.wheel'], 'true'))
+
+  - script: |
+      curl -Os https://uploader.codecov.io/latest/linux/codecov
+      chmod +x codecov
+      ./codecov -f coverage.xml -F adder -F subtractor
+    displayName: 'Codecov upload'
+    condition: and(ne(variables['test.sdist'], 'true'), ne(variables['test.wheel'], 'true'))

@@ -1,0 +1,55 @@
+# Environment variables and secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Private state files
+pnl_state.json
+
+# Data and logs
+data/
+*.log
+*.csv
+
+# Rust build artifacts
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary and backup files
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Archives
+*.zip
+*.tar.gz
+*.tar
+*.rar
+*.7z
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python cache (for signing script)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Backup directory
+backup/
