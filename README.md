@@ -229,9 +229,9 @@ cargo run --bin collect_data
 ```
 
 This will create CSV files in `data/{market}/`:
-- `orderbook_depth.csv` - Full orderbook snapshots
-- `trades.csv` - Trade executions
-- `full_depth.csv` - All orderbook levels
+- `trades.csv` - Trade executions (one row per trade)
+- `orderbook.csv` - Best bid/ask snapshots with mid, spread, and spread_bps
+- `orderbook_depth.csv` - Full orderbook depth (20 levels, horizontal format)
 
 ### 2. Configure Trading Parameters
 
@@ -368,12 +368,16 @@ Where:
 The reservation price adjusts for inventory:
 
 ```
-r = mid + (γ * q * σ² * T) / 2
+r = mid - q * γ * σ² * T
 ```
 
 Where:
 - **mid** = Current mid price
 - **q** = Signed inventory position (positive=long, negative=short)
+
+**Inventory Risk Adjustment**:
+- When **long** (q > 0): Reservation price **decreases** (encourages selling)
+- When **short** (q < 0): Reservation price **increases** (encourages buying)
 
 ### Bid/Ask Calculation
 
@@ -491,7 +495,7 @@ Where:
 - **A** = Baseline intensity
 - **κ** = Decay constant (output in 1/USD)
 
-**Grid**: 18 depth levels from 2 ticks to 1.5% of mid price
+**Grid**: 18 depth levels from 1 tick to 1.0% of mid price
 
 **Pros**: Spec-compliant, works with sparse trades
 **Cons**: Requires orderbook history, more complex
@@ -512,7 +516,7 @@ OLS regression on full orderbook depth:
 - Works for any symbol (uses actual tick size from trading_config)
 - Provides confidence intervals and diagnostics
 
-**Grid**: 18 depth levels from 2 ticks to 1.5% of mid price
+**Grid**: 18 depth levels from 1 tick to 1.0% of mid price
 
 **Pros**: Most accurate, spec-compliant, confidence intervals
 **Cons**: Requires full orderbook depth data
@@ -640,14 +644,14 @@ cargo run --example collect_data
 ```
 data/
 ├── eth_usd/
-│   ├── orderbook_depth.csv      # Horizontal format (20 levels as columns)
-│   ├── trades.csv                # Vertical format (one row per trade)
-│   ├── full_depth.csv            # All orderbook levels
+│   ├── trades.csv                # Trade executions (vertical, one row per trade)
+│   ├── orderbook.csv             # Best bid/ask with mid, spread, spread_bps
+│   ├── orderbook_depth.csv       # Full depth (horizontal, 20 levels as columns)
 │   └── state.json                # Resume state
 ├── btc_usd/
-│   ├── orderbook_depth.csv
 │   ├── trades.csv
-│   ├── full_depth.csv
+│   ├── orderbook.csv
+│   ├── orderbook_depth.csv
 │   └── state.json
 └── sol_usd/
     └── ...
@@ -655,16 +659,7 @@ data/
 
 ### CSV Formats
 
-#### Orderbook Depth (Horizontal)
-
-One row per snapshot, 20 levels as columns:
-
-```csv
-timestamp_ms,datetime,market,seq,bid_price0,bid_qty0,ask_price0,ask_qty0,bid_price1,bid_qty1,ask_price1,ask_qty1,...
-1731432156789,2025-11-12 20:35:56.789 UTC,ETH-USD,12345,3383.0,1.234,3384.0,2.456,3382.0,0.890,3385.0,1.123,...
-```
-
-#### Trades (Vertical)
+#### Trades
 
 One row per trade:
 
@@ -673,14 +668,22 @@ timestamp_ms,datetime,market,side,price,quantity,trade_id,trade_type
 1731432156789,2025-11-12 20:35:56.789 UTC,ETH-USD,buy,3383.5,0.0100,1986517526451851265,TRADE
 ```
 
-#### Full Depth
+#### Orderbook (Best Bid/Ask)
 
-All orderbook levels (for depth-based κ estimation):
+One row per update with best bid/ask, mid price, and spread metrics:
 
 ```csv
-timestamp_ms,datetime,market,seq,level,side,price,quantity
-1731432156789,2025-11-12 20:35:56.789 UTC,ETH-USD,12345,0,bid,3383.0,1.234
-1731432156789,2025-11-12 20:35:56.789 UTC,ETH-USD,12345,0,ask,3384.0,2.456
+timestamp_ms,datetime,market,seq,bid_price,bid_quantity,ask_price,ask_quantity,mid_price,spread,spread_bps
+1731432156789,2025-11-12 20:35:56.789 UTC,ETH-USD,12345,3383.0,1.234,3384.0,2.456,3383.5,1.0,2.96
+```
+
+#### Orderbook Depth (Full 20 Levels)
+
+One row per snapshot, 20 levels as columns (horizontal format):
+
+```csv
+timestamp_ms,datetime,market,seq,bid_price0,bid_qty0,ask_price0,ask_qty0,bid_price1,bid_qty1,ask_price1,ask_qty1,...
+1731432156789,2025-11-12 20:35:56.789 UTC,ETH-USD,12345,3383.0,1.234,3384.0,2.456,3382.0,0.890,3385.0,1.123,...
 ```
 
 ### Features
