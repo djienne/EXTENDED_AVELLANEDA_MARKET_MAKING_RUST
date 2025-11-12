@@ -1,0 +1,60 @@
+# Python package
+# Create and test a Python package on multiple Python versions.
+# Add steps that analyze code, save the dist with the build record, publish to a PyPI-compatible index, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/python
+
+parameters:
+  # defaults for any parameters that are not specified
+  name: ''
+  vmImage: ''
+  use.numba: 'true'
+
+
+jobs:
+
+- job: ${{ parameters.name }}Test
+  pool:
+    vmImage: ${{ parameters.vmImage }}
+  strategy:
+    matrix:
+      python310_win_latest:
+        python.version: '3.10'
+      python311_win_latest:
+        python.version: '3.11'
+      python312_win_latest:
+        python.version: '3.12'
+      python313_win_latest:
+        python.version: '3.13'
+    maxParallel: 10
+
+  steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '$(python.version)'
+      architecture: 'x64'
+    displayName: 'Use Python $(python.version)'
+
+  - script: |
+      python -m venv arch-test
+      call arch-test\Scripts\activate.bat
+      python -m pip install --upgrade pip wheel
+      python -m pip install -r requirements-dev.txt -U
+      python -m pip install -r requirements.txt -U
+      python -m pip list
+    displayName: 'Create Venv and Install dependencies'
+
+  - script: |
+      call arch-test\Scripts\activate.bat
+      python -m pip install -e . -vv --no-build-isolation
+    displayName: 'Build Cython Extensions'
+
+  - script: |
+      call arch-test\Scripts\activate.bat
+      pytest arch --junitxml=junit/test-results.xml -n 2 --durations=25
+    displayName: 'pytest'
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFiles: '**/test-results.xml'
+      testRunTitle: 'Python $(python.version)'
+    condition: succeededOrFailed()

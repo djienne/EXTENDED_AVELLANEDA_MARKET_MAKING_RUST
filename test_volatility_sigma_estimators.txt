@@ -1,0 +1,1 @@
+cargo run --example test_garch_volatility

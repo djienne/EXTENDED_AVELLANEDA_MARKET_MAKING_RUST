@@ -1,0 +1,66 @@
+[package]
+name = "extended_market_maker"
+version = "0.1.0"
+edition = "2021"
+authors = ["Extended Market Maker Contributors"]
+description = "Avellaneda-Stoikov market maker for Extended DEX (Starknet perpetuals exchange)"
+license = "MIT"
+repository = "https://github.com/extended-dex/market-maker"
+keywords = ["trading", "market-making", "starknet", "perpetuals", "crypto"]
+categories = ["api-bindings", "finance"]
+default-run = "market_maker_bot"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.42", features = ["full"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# WebSocket
+futures-util = "0.3"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Utilities
+url = "2.5"
+dotenv = "0.15"
+chrono = "0.4"
+csv = "1.3"
+
+# Optimization for GARCH volatility estimation
+argmin = "0.10"
+argmin-math = { version = "0.4", features = ["vec"] }
+
+# Starknet cryptography for order signing
+starknet-crypto = "0.8"
+starknet-core = "0.16"
+starknet-types-core = "0.2"
+sha2 = "0.10"
+sha3 = "0.10"
+hex = "0.4"
+num-bigint = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+# Default binary for cargo run
+[[bin]]
+name = "market_maker_bot"
+path = "src/bin/market_maker_bot.rs"
+
+# Data collection binary (use cargo run --bin collect_data)
+[[bin]]
+name = "collect_data"
+path = "src/bin/collect_data.rs"

@@ -1,0 +1,10 @@
+Depth-based κ Estimation
+------------------------
+
+Run example:
+  cargo run --example test_k_estimator --release
+
+Notes:
+- Regress ln(λ) on δ in ticks, then convert κ to 1/USD using the exchange tick size.
+- Outputs include κ (1/USD), A, CIs, R², per-level intensities, and samples.
+- Side can be configured (ask, bid, or both); default combines both sides.
