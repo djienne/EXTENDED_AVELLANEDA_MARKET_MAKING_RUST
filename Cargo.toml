@@ -2,6 +2,7 @@
 name = "extended_market_maker"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.91"
 authors = ["Extended Market Maker Contributors"]
 description = "Avellaneda-Stoikov market maker for Extended DEX (Starknet perpetuals exchange)"
 license = "MIT"
