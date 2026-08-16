@@ -1,6 +1,9 @@
 # Environment variables and secrets
 .env
 .env.*
+# ...but the placeholder template must be tracked. `.env.*` above was swallowing it,
+# so this repo had no committed example of its own required keys.
+!.env.example
 *.key
 *.pem
 
